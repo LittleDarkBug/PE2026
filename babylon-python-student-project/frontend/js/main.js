@@ -526,12 +526,8 @@ async function setupWebXR(scene) {
                     {
                         xrInput: xrHelper.input,
                         enablePointerSelectionOnAllControllers: true,
-                        preferredHandedness: "none", // Support gauche et droite
-                        maxPointerDistance: 100, // Distance infinie pour grands graphes
-                        disablePointerUpOnTouchOut: false,
-                        forceGazeMode: false,
-                        gazeCamera: null,
-                        overrideButtonId: null
+                        preferredHandedness: "none",
+                        maxPointerDistance: 100
                     }
                 );
                 console.log("Sélection pointer VR activée");
@@ -539,24 +535,10 @@ async function setupWebXR(scene) {
                 console.log("Pointer selection non disponible:", e);
             }
 
-            // 3. MOUVEMENT DES MAINS - Navigation avec joysticks
-            try {
-                const movement = featuresManager.enableFeature(
-                    BABYLON.WebXRFeatureName.MOVEMENT,
-                    "latest",
-                    {
-                        xrInput: xrHelper.input,
-                        movementOrientationFollowsViewerPose: true,
-                        movementSpeed: 1.0,
-                        rotationSpeed: 0.5
-                    }
-                );
-                console.log("Mouvement VR activé (joysticks)");
-            } catch (e) {
-                console.log("Mouvement VR non disponible:", e);
-            }
+            // MOUVEMENT désactivé - incompatible avec TELEPORTATION
+            // Utilisez la téléportation pour vous déplacer
 
-            // 4. RETOUR HAPTIQUE - Vibrations lors des interactions
+            // RETOUR HAPTIQUE - Vibrations lors des interactions
             xrHelper.input.onControllerAddedObservable.add((controller) => {
                 controller.onMotionControllerInitObservable.add((motionController) => {
                     console.log(`Contrôleur ${motionController.handedness} détecté`);
