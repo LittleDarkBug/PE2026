@@ -1,0 +1,8 @@
+Flask
+Flask-Cors
+Flask-SocketIO
+requests
+numpy
+pandas
+networkx
+python-socketio

@@ -1,0 +1,20 @@
+{
+  "nodes": [
+    {"id": "Paris", "label": "Paris", "type": "city", "population": 2161000},
+    {"id": "Londres", "label": "Londres", "type": "city", "population": 8982000},
+    {"id": "Berlin", "label": "Berlin", "type": "city", "population": 3645000},
+    {"id": "Madrid", "label": "Madrid", "type": "city", "population": 3223000},
+    {"id": "Rome", "label": "Rome", "type": "city", "population": 2873000},
+    {"id": "Amsterdam", "label": "Amsterdam", "type": "city", "population": 821752}
+  ],
+  "edges": [
+    {"source": "Paris", "target": "Londres", "type": "train", "distance_km": 492},
+    {"source": "Paris", "target": "Berlin", "type": "train", "distance_km": 1054},
+    {"source": "Paris", "target": "Madrid", "type": "train", "distance_km": 1268},
+    {"source": "Londres", "target": "Amsterdam", "type": "train", "distance_km": 495},
+    {"source": "Berlin", "target": "Amsterdam", "type": "train", "distance_km": 655},
+    {"source": "Berlin", "target": "Rome", "type": "train", "distance_km": 1506},
+    {"source": "Madrid", "target": "Rome", "type": "flight", "distance_km": 1950},
+    {"source": "Amsterdam", "target": "Paris", "type": "train", "distance_km": 517}
+  ]
+}
