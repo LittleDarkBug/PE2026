@@ -488,34 +488,30 @@ async function setupWebXR(scene) {
     try {
         // Créer l'expérience WebXR avec configuration minimale
         const xrHelper = await scene.createDefaultXRExperienceAsync({
-            floorMeshes: []
+            floorMeshes: [],
+            disableTeleportation: true  // Désactiver téléportation pour permettre le mouvement
         });
 
         if (xrHelper.baseExperience) {
             console.log("WebXR activé - Plateforme VR prête");
             
             const featuresManager = xrHelper.baseExperience.featuresManager;
-            
-            // 1. TÉLÉPORTATION - Navigation rapide dans l'espace 3D
+
+            // 1. MOUVEMENT avec les joysticks des manettes
             try {
-                const teleportation = featuresManager.enableFeature(
-                    BABYLON.WebXRFeatureName.TELEPORTATION, 
-                    "stable", 
+                const movement = featuresManager.enableFeature(
+                    BABYLON.WebXRFeatureName.MOVEMENT,
+                    "stable",
                     {
                         xrInput: xrHelper.input,
-                        floorMeshes: [], // Téléportation libre dans l'espace
-                        defaultTargetMeshOptions: {
-                            teleportationFillColor: "#3390FF",
-                            teleportationBorderColor: "#00FFFF",
-                            torusArrowMaterial: scene.getMaterialByName("teleportMat")
-                        },
-                        timeToTeleport: 3000,
-                        useMainComponentOnly: true
+                        movementOrientationFollowsViewerPose: true,
+                        movementSpeed: 2.0,
+                        rotationSpeed: 1.0
                     }
                 );
-                console.log("Téléportation VR activée");
+                console.log("✓ Mouvement VR activé (utilisez les joysticks)");
             } catch (e) {
-                console.log("Téléportation non disponible:", e);
+                console.log("Mouvement VR non disponible:", e);
             }
 
             // 2. SÉLECTION PAR POINTEUR - Interaction avec les nœuds du graphe
@@ -530,13 +526,10 @@ async function setupWebXR(scene) {
                         maxPointerDistance: 100
                     }
                 );
-                console.log("Sélection pointer VR activée");
+                console.log("✓ Sélection pointer VR activée");
             } catch (e) {
                 console.log("Pointer selection non disponible:", e);
             }
-
-            // MOUVEMENT désactivé - incompatible avec TELEPORTATION
-            // Utilisez la téléportation pour vous déplacer
 
             // RETOUR HAPTIQUE - Vibrations lors des interactions
             xrHelper.input.onControllerAddedObservable.add((controller) => {
