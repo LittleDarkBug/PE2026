@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Test de compatibilité WebXR</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        .test-result {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border-left: 4px solid #666;
+        }
+        .success {
+            background: #1e4620;
+            border-left-color: #4caf50;
+        }
+        .error {
+            background: #4a1e1e;
+            border-left-color: #f44336;
+        }
+        .warning {
+            background: #4a3a1e;
+            border-left-color: #ff9800;
+        }
+        h1 {
+            color: #4fc3f7;
+        }
+        button {
+            background: #2196f3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #1976d2;
+        }
+        .code {
+            background: #0d1117;
+            padding: 10px;
+            border-radius: 3px;
+            font-family: monospace;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 Test de compatibilité WebXR</h1>
+    
+    <div id="results"></div>
+    
+    <h2>Actions</h2>
+    <button onclick="runAllTests()">🔄 Relancer tous les tests</button>
+    <button onclick="testVRSession()">🥽 Tester session VR</button>
+    
+    <script>
+        const results = document.getElementById('results');
+        
+        function addResult(type, title, message) {
+            const div = document.createElement('div');
+            div.className = `test-result ${type}`;
+            div.innerHTML = `<strong>${title}</strong><br>${message}`;
+            results.appendChild(div);
+        }
+        
+        function clearResults() {
+            results.innerHTML = '';
+        }
+        
+        async function runAllTests() {
+            clearResults();
+            
+            // Test 1: Navigator présent
+            if (navigator) {
+                addResult('success', '✓ Navigator', 'API Navigator disponible');
+            } else {
+                addResult('error', '✗ Navigator', 'API Navigator non disponible');
+                return;
+            }
+            
+            // Test 2: WebXR présent
+            if (navigator.xr) {
+                addResult('success', '✓ WebXR API', 'API WebXR disponible dans ce navigateur');
+            } else {
+                addResult('error', '✗ WebXR API', 'API WebXR non disponible. Utilisez Chrome, Edge ou Firefox récent.');
+                return;
+            }
+            
+            // Test 3: Support immersive-vr
+            try {
+                const supported = await navigator.xr.isSessionSupported('immersive-vr');
+                if (supported) {
+                    addResult('success', '✓ Mode VR immersif', 'Votre système supporte le mode VR immersif');
+                } else {
+                    addResult('warning', '⚠ Mode VR immersif', 'Mode VR non supporté. Assurez-vous qu\'un casque VR est connecté et que le runtime est démarré.');
+                }
+            } catch (error) {
+                addResult('error', '✗ Mode VR immersif', `Erreur: ${error.message}`);
+            }
+            
+            // Test 4: Support inline
+            try {
+                const supported = await navigator.xr.isSessionSupported('inline');
+                if (supported) {
+                    addResult('success', '✓ Mode inline', 'Mode inline supporté (vue 3D dans la page)');
+                } else {
+                    addResult('warning', '⚠ Mode inline', 'Mode inline non supporté');
+                }
+            } catch (error) {
+                addResult('error', '✗ Mode inline', `Erreur: ${error.message}`);
+            }
+            
+            // Test 5: HTTPS ou localhost
+            const isSecure = window.location.protocol === 'https:' || 
+                           window.location.hostname === 'localhost' || 
+                           window.location.hostname === '127.0.0.1';
+            if (isSecure) {
+                addResult('success', '✓ Contexte sécurisé', `Protocole: ${window.location.protocol}, Hôte: ${window.location.hostname}`);
+            } else {
+                addResult('error', '✗ Contexte sécurisé', 'WebXR nécessite HTTPS ou localhost. Utilisez http://localhost au lieu de l\'adresse IP.');
+            }
+            
+            // Test 6: User agent
+            const ua = navigator.userAgent;
+            addResult('success', 'ℹ Navigateur', `<div class="code">${ua}</div>`);
+            
+            // Test 7: Référence spaces supportés
+            addResult('success', 'ℹ Info', 'Pour tester une session complète, cliquez sur "Tester session VR"');
+        }
+        
+        async function testVRSession() {
+            clearResults();
+            addResult('warning', '⏳ Test en cours', 'Tentative de création d\'une session VR...');
+            
+            try {
+                if (!navigator.xr) {
+                    throw new Error('WebXR non disponible');
+                }
+                
+                // Tester avec configuration minimale
+                const session = await navigator.xr.requestSession('immersive-vr', {
+                    requiredFeatures: ['local-floor'],
+                    optionalFeatures: []
+                });
+                
+                addResult('success', '✓ Session VR créée', 'Session VR créée avec succès avec configuration minimale !');
+                
+                // Informations sur la session
+                const refSpace = await session.requestReferenceSpace('local-floor');
+                addResult('success', '✓ Reference space', 'Reference space "local-floor" créé avec succès');
+                
+                // Fermer la session
+                setTimeout(async () => {
+                    await session.end();
+                    addResult('success', '✓ Session fermée', 'Session VR fermée proprement');
+                }, 2000);
+                
+            } catch (error) {
+                addResult('error', '✗ Session VR', `Impossible de créer la session: ${error.message}`);
+                
+                if (error.message.includes('session')) {
+                    addResult('warning', '💡 Solution', `
+                        <strong>Solutions possibles:</strong><br>
+                        1. Redémarrez votre casque VR<br>
+                        2. Redémarrez le runtime VR (Oculus, SteamVR, WMR)<br>
+                        3. Redémarrez le navigateur<br>
+                        4. Vérifiez que le casque est bien détecté<br>
+                        5. Essayez avec un autre navigateur (Chrome/Edge)
+                    `);
+                }
+            }
+        }
+        
+        // Lancer les tests au chargement
+        window.addEventListener('DOMContentLoaded', runAllTests);
+    </script>
+</body>
+</html>
