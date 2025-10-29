@@ -486,33 +486,9 @@ function createBaseScene(engine, canvas) {
 // Configuration WebXR pour casques VR - Optimisé pour utilisation VR
 async function setupWebXR(scene) {
     try {
-        // Vérifier le support WebXR avant de créer l'expérience
-        if (!navigator.xr) {
-            console.warn("WebXR n'est pas disponible dans ce navigateur");
-            console.log("Utilisez Chrome ou Edge avec Quest Link pour le support VR");
-            return;
-        }
-
-        // Vérifier le support du mode immersive-vr
-        const isVRSupported = await navigator.xr.isSessionSupported('immersive-vr');
-        console.log("Support immersive-vr:", isVRSupported);
-        
-        if (!isVRSupported) {
-            console.warn("Le mode immersive-vr n'est pas supporté");
-            console.log("Assurez-vous que :");
-            console.log("1. Votre casque Quest 3 est connecté via Quest Link");
-            console.log("2. Le logiciel Oculus est en cours d'exécution");
-            console.log("3. Vous utilisez Chrome ou Edge (pas Firefox)");
-            console.log("4. WebXR est activé dans chrome://flags/#webxr-incubations");
-            return;
-        }
-
-        // Créer l'expérience WebXR complète avec toutes les fonctionnalités
+        // Créer l'expérience WebXR avec configuration minimale
         const xrHelper = await scene.createDefaultXRExperienceAsync({
-            floorMeshes: [], // Espace infini sans sol
-            disableTeleportation: false, // Activer téléportation
-            optionalFeatures: true
-            // Ne pas spécifier uiOptions.sessionMode - laisser Babylon le détecter automatiquement
+            floorMeshes: []
         });
 
         if (xrHelper.baseExperience) {
