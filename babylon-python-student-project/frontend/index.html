@@ -5,9 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Visualisation 3D de Graphes - Projet Étudiant</title>
     <link rel="stylesheet" href="css/style.css">
+    <style>
+        #vrButton {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 15px 30px;
+            background: #007acc;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            z-index: 9999;
+            font-weight: bold;
+        }
+        #vrButton:hover {
+            background: #005a9e;
+        }
+    </style>
 </head>
 <body>
     <canvas id="renderCanvas"></canvas>
+    <button id="vrButton" onclick="forceEnterVR()">🥽 Entrer en VR</button>
     <!-- Babylon.js 7.x avec support WebXR complet -->
     <script src="https://cdn.babylonjs.com/babylon.max.js"></script>
     <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>

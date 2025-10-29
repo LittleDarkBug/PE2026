@@ -602,10 +602,30 @@ async function setupWebXR(scene) {
             scene.getEngine().setHardwareScalingLevel(1.0);
 
             console.log("✓ Plateforme VR complètement configurée");
-            console.log("✓ Cliquez sur le bouton VR (en bas à droite) pour entrer en mode immersif");
+            console.log("✓ Cliquez sur le bouton VR pour entrer en mode immersif");
+            
+            // Stocker xrHelper globalement pour le bouton manuel
+            window.xrHelper = xrHelper;
         }
     } catch (error) {
         console.log("WebXR non disponible:", error.message);
         console.log("Note: WebXR nécessite HTTPS ou localhost + casque VR compatible");
     }
 }
+
+// Fonction pour forcer l'entrée en VR via le bouton manuel
+async function forceEnterVR() {
+    try {
+        if (window.xrHelper && window.xrHelper.baseExperience) {
+            await window.xrHelper.baseExperience.enterXRAsync("immersive-vr", "local-floor");
+            console.log("Entrée en VR forcée avec succès");
+        } else {
+            console.error("XR Helper non initialisé");
+            alert("WebXR n'est pas disponible. Vérifiez que votre casque est connecté et que Quest Link est actif.");
+        }
+    } catch (error) {
+        console.error("Erreur lors de l'entrée en VR:", error);
+        alert("Impossible d'entrer en VR: " + error.message + "\n\nAssurez-vous que:\n- Le casque Quest 3 est connecté\n- Quest Link est actif\n- OpenXR est configuré sur Oculus");
+    }
+}
+
