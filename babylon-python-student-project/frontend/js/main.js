@@ -488,20 +488,11 @@ function createBaseScene(engine, canvas) {
 // Configuration WebXR pour casques VR - Optimisé pour utilisation VR
 async function setupWebXR(scene) {
     try {
-        let xrHelper;
-        
-        // Essayer d'abord avec configuration minimale (plus compatible)
-        try {
-            console.log("Tentative de création WebXR avec configuration de base...");
-            xrHelper = await scene.createDefaultXRExperienceAsync({
-                // Configuration minimale pour maximum de compatibilité
-                disableTeleportation: false // Garder la téléportation pour commencer
-            });
-        } catch (minimalError) {
-            console.log("Configuration de base échouée, tentative avec paramètres par défaut...");
-            // Si même la config minimale échoue, essayer sans aucun paramètre
-            xrHelper = await scene.createDefaultXRExperienceAsync();
-        }
+        // Créer l'expérience WebXR complète avec toutes les fonctionnalités
+        const xrHelper = await scene.createDefaultXRExperienceAsync({
+            floorMeshes: [],
+            disableTeleportation: true
+        });
 
         // Stocker globalement pour accès depuis l'UI
         window.xrHelper = xrHelper;
@@ -519,19 +510,18 @@ async function setupWebXR(scene) {
                     {
                         xrInput: xrHelper.input,
                         enablePointerSelectionOnAllControllers: true
-                        // Options simplifiées pour meilleure compatibilité
                     }
                 );
-                console.log("✓ Sélection pointer VR activée");
+                console.log("Sélection pointer VR activée");
             } catch (e) {
-                console.warn("⚠ Pointer selection non disponible:", e.message);
+                console.warn("Pointer selection non disponible:", e.message);
             }
 
-            // 2. MOUVEMENT DES MAINS - Navigation avec joysticks (priorité sur téléportation)
+            // 2. MOUVEMENT DES MAINS - Navigation avec joysticks
             try {
                 const movement = featuresManager.enableFeature(
                     BABYLON.WebXRFeatureName.MOVEMENT,
-                    "stable", // Utiliser "stable" au lieu de "latest"
+                    "stable",
                     {
                         xrInput: xrHelper.input,
                         movementOrientationFollowsViewerPose: true,
@@ -539,10 +529,9 @@ async function setupWebXR(scene) {
                         rotationSpeed: 0.5
                     }
                 );
-                console.log("✓ Mouvement VR activé (joysticks)");
+                console.log("Mouvement VR activé (joysticks)");
             } catch (e) {
-                console.warn("⚠ Mouvement VR non disponible:", e.message);
-                console.log("  → Utilisez la téléportation par défaut");
+                console.warn("Mouvement VR non disponible:", e.message);
             }
 
             // 3. RETOUR HAPTIQUE - Vibrations lors des interactions
