@@ -85,16 +85,6 @@ class UIManager {
                 <span class="btn-icon">${this.getIcon('users')}</span>
                 <span>Collaboratif</span>
             </button>
-            <button class="btn btn-vr" id="btn-enter-vr">
-                <span class="btn-icon">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
-                        <circle cx="8" cy="14" r="2"></circle>
-                        <circle cx="16" cy="14" r="2"></circle>
-                    </svg>
-                </span>
-                <span>Entrer en VR</span>
-            </button>
         `;
         document.body.appendChild(toolbar);
 
@@ -119,85 +109,6 @@ class UIManager {
         document.getElementById('btn-filter').onclick = () => this.showFilterDialog();
         document.getElementById('btn-reset').onclick = () => this.resetCamera();
         document.getElementById('btn-collab').onclick = () => this.showCollaborativeDialog();
-        
-        // Bouton VR avec vérification
-        const vrButton = document.getElementById('btn-enter-vr');
-        if (vrButton) {
-            vrButton.onclick = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                console.log('🎮 Bouton VR cliqué !');
-                alert('Bouton VR activé ! Vérification en cours...');
-                this.enterVRMode();
-            };
-            console.log('✓ Bouton VR configuré avec ID:', vrButton.id);
-        } else {
-            console.error('❌ Bouton VR introuvable dans le DOM !');
-            console.log('Boutons disponibles:', Array.from(document.querySelectorAll('button')).map(b => b.id || b.className));
-        }
-    }
-
-    async enterVRMode() {
-        console.log('=== Tentative d\'entrée en mode VR ===');
-        
-        try {
-            // Test toast immédiat
-            this.showToast('Vérification VR...', 'info');
-            console.log('1. Toast affiché');
-            
-            // Récupérer la scène depuis le graphManager
-            const scene = this.graphManager.scene;
-            console.log('2. Scène récupérée:', scene ? 'OK' : 'ERREUR');
-            
-            if (!scene) {
-                this.showToast('Scène non disponible', 'error');
-                console.error('Scène non disponible !');
-                return;
-            }
-
-            // Vérifier si WebXR est supporté
-            console.log('3. Vérification navigator.xr:', navigator.xr ? 'OK' : 'NON SUPPORTÉ');
-            if (!navigator.xr) {
-                this.showToast('WebXR non supporté par ce navigateur', 'error');
-                console.error('WebXR non disponible. Utilisez Chrome/Edge sur Windows ou Quest Browser.');
-                return;
-            }
-
-            // Vérifier si un casque VR est disponible
-            console.log('4. Vérification session VR...');
-            const supported = await navigator.xr.isSessionSupported('immersive-vr');
-            console.log('5. Session VR supportée:', supported ? 'OUI' : 'NON');
-            
-            if (!supported) {
-                this.showToast('Aucun casque VR détecté', 'warning');
-                console.log('Aucun casque VR connecté. Connectez un Meta Quest ou autre casque compatible.');
-                return;
-            }
-
-            // Tenter d'entrer en mode VR
-            console.log('6. Vérification caméra actuelle...');
-            if (scene.activeCamera && scene.activeCamera.getClassName() === 'WebXRCamera') {
-                this.showToast('Déjà en mode VR', 'info');
-                console.log('Déjà en mode VR');
-                return;
-            }
-
-            // Si le helper XR existe déjà, l'utiliser
-            console.log('7. Vérification xrHelper:', window.xrHelper ? 'OK' : 'NON INITIALISÉ');
-            if (window.xrHelper && window.xrHelper.baseExperience) {
-                console.log('8. Tentative d\'entrée en VR...');
-                await window.xrHelper.baseExperience.enterXRAsync('immersive-vr', 'local-floor');
-                this.showToast('Mode VR activé !', 'success');
-                console.log('✓ Mode VR activé avec succès !');
-            } else {
-                this.showToast('WebXR non initialisé. Rechargez la page.', 'warning');
-                console.warn('xrHelper non disponible. Le système WebXR n\'a pas été initialisé correctement.');
-            }
-
-        } catch (error) {
-            console.error('Erreur lors de l\'entrée en VR:', error);
-            this.showToast('Erreur VR: ' + error.message, 'error');
-        }
     }
 
     createSidePanel() {
@@ -907,24 +818,29 @@ class UIManager {
         const selectedNode = this.graphManager.selectedNodes[0];
         const targetPosition = selectedNode.position.clone();
         
-        // Animer la caméra vers le nœud avec animation manuelle (compatible VR)
-        const startTarget = camera.target.clone();
-        const startRadius = camera.radius;
-        const endRadius = 5;
-        let cameraFrame = 0;
-        const cameraDuration = 30;
-        const cameraObserver = this.scene.onBeforeRenderObservable.add(() => {
-            cameraFrame++;
-            const progress = Math.min(cameraFrame / cameraDuration, 1);
-            const easedProgress = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
-            
-            camera.target = BABYLON.Vector3.Lerp(startTarget, targetPosition, easedProgress);
-            camera.radius = startRadius + (endRadius - startRadius) * easedProgress;
-            
-            if (progress >= 1) {
-                this.scene.onBeforeRenderObservable.remove(cameraObserver);
-            }
-        });
+        // Animer la caméra vers le nœud
+        BABYLON.Animation.CreateAndStartAnimation(
+            'focusCamera',
+            camera,
+            'target',
+            60,
+            30,
+            camera.target,
+            targetPosition,
+            BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT
+        );
+        
+        // Ajuster le rayon pour un bon zoom
+        BABYLON.Animation.CreateAndStartAnimation(
+            'zoomCamera',
+            camera,
+            'radius',
+            60,
+            30,
+            camera.radius,
+            5,
+            BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT
+        );
         
         this.showToast('Focus sur le nœud sélectionné', 'success');
     }

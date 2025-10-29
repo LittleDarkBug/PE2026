@@ -20,11 +20,9 @@ window.addEventListener('DOMContentLoaded', function() {
 
     // Initialiser le gestionnaire de graphes
     graphManager = new GraphManager(scene, engine);
-    window.graphManager = graphManager; // Rendre accessible globalement pour le menu VR
     
     // Initialiser l'interface utilisateur
     uiManager = new UIManager(graphManager);
-    window.uiManager = uiManager; // Rendre accessible globalement pour le menu VR
 
     // Boucle de rendu
     engine.runRenderLoop(function () {
@@ -488,26 +486,63 @@ function createBaseScene(engine, canvas) {
 // Configuration WebXR pour casques VR - Optimisé pour utilisation VR
 async function setupWebXR(scene) {
     try {
+        // Vérifier le support WebXR avant de créer l'expérience
+        if (!navigator.xr) {
+            console.warn("WebXR n'est pas disponible dans ce navigateur");
+            console.log("Utilisez Chrome ou Edge avec Quest Link pour le support VR");
+            return;
+        }
+
+        // Vérifier le support du mode immersive-vr
+        const isVRSupported = await navigator.xr.isSessionSupported('immersive-vr');
+        console.log("Support immersive-vr:", isVRSupported);
+        
+        if (!isVRSupported) {
+            console.warn("Le mode immersive-vr n'est pas supporté");
+            console.log("Assurez-vous que :");
+            console.log("1. Votre casque Quest 3 est connecté via Quest Link");
+            console.log("2. Le logiciel Oculus est en cours d'exécution");
+            console.log("3. Vous utilisez Chrome ou Edge (pas Firefox)");
+            console.log("4. WebXR est activé dans chrome://flags/#webxr-incubations");
+            return;
+        }
+
         // Créer l'expérience WebXR complète avec toutes les fonctionnalités
         const xrHelper = await scene.createDefaultXRExperienceAsync({
             floorMeshes: [], // Espace infini sans sol
-            disableTeleportation: true, // DÉSACTIVER téléportation (incompatible avec mouvement joystick)
-            optionalFeatures: true,
-            uiOptions: {
-                sessionMode: 'immersive-vr',
-                referenceSpaceType: 'local-floor'
-            }
+            disableTeleportation: false, // Activer téléportation
+            optionalFeatures: true
+            // Ne pas spécifier uiOptions.sessionMode - laisser Babylon le détecter automatiquement
         });
-
-        // Stocker globalement pour accès depuis l'UI
-        window.xrHelper = xrHelper;
 
         if (xrHelper.baseExperience) {
             console.log("WebXR activé - Plateforme VR prête");
             
             const featuresManager = xrHelper.baseExperience.featuresManager;
             
-            // 1. SÉLECTION PAR POINTEUR - Interaction avec les nœuds du graphe
+            // 1. TÉLÉPORTATION - Navigation rapide dans l'espace 3D
+            try {
+                const teleportation = featuresManager.enableFeature(
+                    BABYLON.WebXRFeatureName.TELEPORTATION, 
+                    "stable", 
+                    {
+                        xrInput: xrHelper.input,
+                        floorMeshes: [], // Téléportation libre dans l'espace
+                        defaultTargetMeshOptions: {
+                            teleportationFillColor: "#3390FF",
+                            teleportationBorderColor: "#00FFFF",
+                            torusArrowMaterial: scene.getMaterialByName("teleportMat")
+                        },
+                        timeToTeleport: 3000,
+                        useMainComponentOnly: true
+                    }
+                );
+                console.log("Téléportation VR activée");
+            } catch (e) {
+                console.log("Téléportation non disponible:", e);
+            }
+
+            // 2. SÉLECTION PAR POINTEUR - Interaction avec les nœuds du graphe
             try {
                 const pointerSelection = featuresManager.enableFeature(
                     BABYLON.WebXRFeatureName.POINTER_SELECTION, 
@@ -528,7 +563,7 @@ async function setupWebXR(scene) {
                 console.log("Pointer selection non disponible:", e);
             }
 
-            // 2. MOUVEMENT DES MAINS - Navigation avec joysticks (priorité sur téléportation)
+            // 3. MOUVEMENT DES MAINS - Navigation avec joysticks
             try {
                 const movement = featuresManager.enableFeature(
                     BABYLON.WebXRFeatureName.MOVEMENT,
@@ -542,10 +577,10 @@ async function setupWebXR(scene) {
                 );
                 console.log("Mouvement VR activé (joysticks)");
             } catch (e) {
-                console.log("Mouvement VR non disponible:", e.message);
+                console.log("Mouvement VR non disponible:", e);
             }
 
-            // 3. RETOUR HAPTIQUE - Vibrations lors des interactions
+            // 4. RETOUR HAPTIQUE - Vibrations lors des interactions
             xrHelper.input.onControllerAddedObservable.add((controller) => {
                 controller.onMotionControllerInitObservable.add((motionController) => {
                     console.log(`Contrôleur ${motionController.handedness} détecté`);
@@ -581,65 +616,26 @@ async function setupWebXR(scene) {
                 });
             });
 
-            // 4. GESTION DES ÉTATS VR
+            // 5. GESTION DES ÉTATS VR
             xrHelper.baseExperience.onStateChangedObservable.add((state) => {
                 switch(state) {
                     case BABYLON.WebXRState.IN_XR:
                         console.log("Mode VR immersif activé!");
-                        
-                        // Marquer globalement qu'on est en VR
-                        window.isInVRMode = true;
-                        
-                        // Masquer tous les panneaux HTML 2D
-                        hideHTML2DPanels();
-                        // Créer le menu VR 3D
-                        createVRMenu(scene, xrHelper);
+                        // Adapter l'interface pour VR
                         if (window.uiManager) {
                             window.uiManager.showToast("Mode VR activé", "success");
-                        }
-                        
-                        // Empêcher les actions qui sortent de VR
-                        preventVRDisruptingActions();
-                        
-                        // Maintenir le focus sur le canvas
-                        const canvas = scene.getEngine().getRenderingCanvas();
-                        if (canvas) {
-                            canvas.focus();
-                            // Prévenir la perte de focus
-                            canvas.addEventListener('blur', (e) => {
-                                if (window.isInVRMode) {
-                                    setTimeout(() => canvas.focus(), 0);
-                                }
-                            });
                         }
                         break;
                     case BABYLON.WebXRState.EXITING_XR:
                         console.log("Sortie du mode VR...");
-                        
-                        // Désactiver le mode VR
-                        window.isInVRMode = false;
-                        
-                        // Réafficher les panneaux HTML 2D
-                        showHTML2DPanels();
-                        // Nettoyer le menu VR
-                        if (scene.vrMenu) {
-                            scene.vrMenu.dispose();
-                            scene.vrMenu = null;
-                        }
-                        
-                        // Restaurer les actions normales
-                        restoreNormalActions();
                         break;
                     case BABYLON.WebXRState.NOT_IN_XR:
                         console.log("Mode desktop actif");
-                        window.isInVRMode = false;
-                        // S'assurer que les panneaux sont visibles
-                        showHTML2DPanels();
                         break;
                 }
             });
 
-            // 5. OPTIMISATIONS PERFORMANCE VR
+            // 6. OPTIMISATIONS PERFORMANCE VR
             scene.getEngine().enableOfflineSupport = false;
             scene.autoClear = false;
             scene.autoClearDepthAndStencil = false;
@@ -654,644 +650,4 @@ async function setupWebXR(scene) {
         console.log("WebXR non disponible:", error.message);
         console.log("Note: WebXR nécessite HTTPS ou localhost + casque VR compatible");
     }
-}
-
-// Fonctions pour masquer/afficher les panneaux HTML 2D
-function hideHTML2DPanels() {
-    // Masquer tous les éléments d'interface HTML
-    const elementsToHide = [
-        document.querySelector('.menu-toggle'),
-        document.querySelector('.main-toolbar'),
-        document.querySelector('.side-panel'),
-        document.querySelector('.stats-panel'),
-        document.querySelector('.info-modal')
-    ];
-    
-    elementsToHide.forEach(element => {
-        if (element) {
-            element.style.display = 'none';
-        }
-    });
-    
-    console.log("Panneaux HTML 2D masqués pour mode VR");
-}
-
-function showHTML2DPanels() {
-    // Réafficher tous les éléments d'interface HTML
-    const menuToggle = document.querySelector('.menu-toggle');
-    if (menuToggle) menuToggle.style.display = 'flex';
-    
-    const mainToolbar = document.querySelector('.main-toolbar');
-    if (mainToolbar) mainToolbar.style.display = 'flex';
-    
-    const sidePanel = document.querySelector('.side-panel');
-    if (sidePanel) sidePanel.style.display = 'flex';
-    
-    const statsPanel = document.querySelector('.stats-panel');
-    if (statsPanel) statsPanel.style.display = 'block';
-    
-    const infoModal = document.querySelector('.info-modal');
-    if (infoModal && infoModal.classList.contains('active')) {
-        infoModal.style.display = 'flex';
-    }
-    
-    console.log("Panneaux HTML 2D réaffichés pour mode desktop");
-}
-
-// Empêcher les actions qui perturbent la session VR
-function preventVRDisruptingActions() {
-    console.log("Protection VR activee - blocage des actions perturbatrices");
-    
-    // Bloquer les alertes et confirmations
-    window.originalAlert = window.alert;
-    window.originalConfirm = window.confirm;
-    window.originalPrompt = window.prompt;
-    
-    window.alert = (msg) => console.log('[VR Mode - Alert bloque]:', msg);
-    window.confirm = (msg) => { console.log('[VR Mode - Confirm bloque]:', msg); return false; };
-    window.prompt = (msg) => { console.log('[VR Mode - Prompt bloque]:', msg); return null; };
-    
-    // Empêcher l'ouverture de nouveaux onglets/fenêtres
-    window.originalOpen = window.open;
-    window.open = () => {
-        console.warn('[VR Mode - window.open bloque]');
-        return null;
-    };
-}
-
-// Restaurer les actions normales après sortie de VR
-function restoreNormalActions() {
-    console.log("Protection VR desactivee - restauration des actions normales");
-    
-    if (window.originalAlert) window.alert = window.originalAlert;
-    if (window.originalConfirm) window.confirm = window.originalConfirm;
-    if (window.originalPrompt) window.prompt = window.originalPrompt;
-    if (window.originalOpen) window.open = window.originalOpen;
-}
-
-// Création du menu VR 3D intégré dans la scène - SYSTÈME COMPLET
-function createVRMenu(scene, xrHelper) {
-    // Créer un plan pour le menu principal
-    const menuPanel = BABYLON.MeshBuilder.CreatePlane("vrMenuPanel", {
-        width: 6,
-        height: 5
-    }, scene);
-    
-    // Positionner le menu devant l'utilisateur
-    menuPanel.position = new BABYLON.Vector3(0, 1.5, 5);
-    
-    // Créer la texture GUI
-    const advancedTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(menuPanel, 2400, 2000);
-    
-    // État du menu (quelle page afficher)
-    let currentPage = 'main';
-    let selectedGraphFiles = []; // Pour stocker les fichiers JSON prêchargés
-    
-    // Container principal avec scroll
-    const scrollViewer = new BABYLON.GUI.ScrollViewer();
-    scrollViewer.width = "95%";
-    scrollViewer.height = "90%";
-    scrollViewer.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
-    scrollViewer.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
-    scrollViewer.thickness = 0;
-    scrollViewer.barColor = "#3b82f6";
-    scrollViewer.barBackground = "#1e293b";
-    advancedTexture.addControl(scrollViewer);
-    
-    const panel = new BABYLON.GUI.StackPanel();
-    panel.width = "100%";
-    panel.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
-    scrollViewer.addControl(panel);
-    
-    // Fond semi-transparent
-    const background = new BABYLON.GUI.Rectangle();
-    background.width = 1;
-    background.height = 1;
-    background.background = "rgba(15, 23, 42, 0.98)";
-    background.cornerRadius = 20;
-    background.thickness = 4;
-    background.color = "#3b82f6";
-    advancedTexture.addControl(background);
-    background.zIndex = -1;
-    
-    // Fonction pour vider le panel
-    function clearPanel() {
-        // Vider sans déclencher de re-render complet
-        while (panel.children.length > 0) {
-            panel.removeControl(panel.children[0]);
-        }
-    }
-    
-    // Fonction helper pour créer un titre
-    function createTitle(text) {
-        const title = new BABYLON.GUI.TextBlock();
-        title.text = text;
-        title.height = "100px";
-        title.fontSize = 70;
-        title.color = "#60a5fa";
-        title.fontWeight = "bold";
-        title.paddingBottom = "30px";
-        title.paddingTop = "20px";
-        panel.addControl(title);
-    }
-    
-    // Fonction helper pour créer un bouton
-    function createVRButton(text, callback, color = "#1e293b") {
-        const button = BABYLON.GUI.Button.CreateSimpleButton("btn_" + text.replace(/\s/g, '_'), text);
-        button.width = "90%";
-        button.height = "100px";
-        button.color = "#f1f5f9";
-        button.background = color;
-        button.fontSize = 45;
-        button.cornerRadius = 10;
-        button.thickness = 2;
-        button.paddingTop = "15px";
-        button.paddingBottom = "15px";
-        
-        button.onPointerEnterObservable.add(() => {
-            button.background = "#3b82f6";
-        });
-        
-        button.onPointerOutObservable.add(() => {
-            button.background = color;
-        });
-        
-        button.onPointerClickObservable.add(() => {
-            // Exécuter le callback dans un délai pour éviter de perturber la session XR
-            setTimeout(() => {
-                try {
-                    callback();
-                } catch(error) {
-                    console.error('Erreur callback VR:', error);
-                }
-            }, 0);
-        });
-        
-        panel.addControl(button);
-    }
-    
-    // Fonction helper pour créer un séparateur
-    function createSeparator() {
-        const separator = new BABYLON.GUI.Rectangle();
-        separator.height = "2px";
-        separator.width = "80%";
-        separator.background = "#475569";
-        separator.thickness = 0;
-        separator.paddingTop = "10px";
-        separator.paddingBottom = "10px";
-        panel.addControl(separator);
-    }
-    
-    // Fonction helper pour créer un texte d'information
-    function createInfoText(text) {
-        const info = new BABYLON.GUI.TextBlock();
-        info.text = text;
-        info.height = "60px";
-        info.fontSize = 35;
-        info.color = "#94a3b8";
-        info.fontStyle = "italic";
-        info.paddingTop = "15px";
-        info.paddingBottom = "15px";
-        info.textWrapping = true;
-        panel.addControl(info);
-    }
-    
-    // PAGE PRINCIPALE
-    function showMainPage() {
-        currentPage = 'main';
-        clearPanel();
-        createTitle("MENU VR - Visualisation 3D");
-        
-        createVRButton("Gestion des Graphes", () => showGraphManagementPage(), "#1e293b");
-        createVRButton("Layouts & Apparence", () => showLayoutPage(), "#1e293b");
-        createVRButton("Filtres & Recherche", () => showFilterPage(), "#1e293b");
-        createVRButton("Export & Sauvegarde", () => showExportPage(), "#1e293b");
-        createVRButton("Parametres VR", () => showSettingsPage(), "#1e293b");
-        
-        createSeparator();
-        createVRButton("Masquer Menu", () => {
-            menuPanel.setEnabled(false);
-            scene.vrMenuHidden = true;
-            showVRNotification(scene, "Menu masque - Touchez la sphere bleue", 3000);
-        }, "#dc2626");
-        
-        createInfoText("Utilisez le pointeur laser pour interagir");
-    }
-    
-    // PAGE GESTION DES GRAPHES
-    function showGraphManagementPage() {
-        currentPage = 'graphs';
-        clearPanel();
-        createTitle("Gestion des Graphes");
-        
-        createVRButton("Retour", () => showMainPage(), "#475569");
-        createSeparator();
-        
-        createVRButton("Charger Graphe Demo", () => {
-            if (window.graphManager) {
-                showVRNotification(scene, "Chargement en cours...", 1500);
-                const currentXRSession = xrHelper.baseExperience.sessionManager.session;
-                
-                window.graphManager.loadDemoGraph()
-                    .then(() => {
-                        if (currentXRSession && !currentXRSession.ended) {
-                            showVRNotification(scene, "Graphe demo charge", 2500);
-                        }
-                    })
-                    .catch((error) => {
-                        if (currentXRSession && !currentXRSession.ended) {
-                            showVRNotification(scene, "Erreur: " + error.message, 2500);
-                        }
-                    });
-            }
-        }, "#10b981");
-        
-        createVRButton("Charger Fichier JSON", () => {
-            showImportDialogVR();
-        }, "#3b82f6");
-        
-        createVRButton("Effacer le Graphe", () => {
-            if (window.graphManager) {
-                window.graphManager.clearGraph();
-                showVRNotification(scene, "Graphe efface", 2000);
-            }
-        }, "#dc2626");
-        
-        createSeparator();
-        createInfoText("Chargez des donnees pour commencer");
-    }
-    
-    // Dialogue d'import en VR
-    function showImportDialogVR() {
-        clearPanel();
-        createTitle("Import Fichier JSON");
-        
-        createVRButton("Retour", () => showGraphManagementPage(), "#475569");
-        createSeparator();
-        
-        createInfoText("Fichiers disponibles:");
-        
-        createVRButton("sample_graph.json", () => {
-            loadPredefinedGraph('sample_graph.json');
-            setTimeout(() => showGraphManagementPage(), 1000);
-        }, "#1e293b");
-        
-        createVRButton("test_graph_200.json", () => {
-            loadPredefinedGraph('test_graph_200.json');
-            setTimeout(() => showGraphManagementPage(), 1000);
-        }, "#1e293b");
-    }
-    
-    // PAGE LAYOUTS
-    function showLayoutPage() {
-        currentPage = 'layouts';
-        clearPanel();
-        createTitle("Layouts & Apparence");
-        
-        createVRButton("Retour", () => showMainPage(), "#475569");
-        createSeparator();
-        
-        createInfoText("Choisissez la disposition du graphe:");
-        
-        createVRButton("Layout Force-Directed", () => {
-            applyLayoutVR('force');
-        }, "#3b82f6");
-        
-        createVRButton("Layout Circulaire", () => {
-            applyLayoutVR('circular');
-        }, "#8b5cf6");
-        
-        createVRButton("Layout Spherique", () => {
-            applyLayoutVR('sphere');
-        }, "#10b981");
-        
-        createVRButton("Layout Aleatoire", () => {
-            applyLayoutVR('random');
-        }, "#f59e0b");
-        
-        createSeparator();
-        createInfoText("Les animations sont fluides en VR");
-    }
-    
-    // PAGE FILTRES
-    function showFilterPage() {
-        currentPage = 'filters';
-        clearPanel();
-        createTitle("Filtres & Recherche");
-        
-        createVRButton("Retour", () => showMainPage(), "#475569");
-        createSeparator();
-        
-        createInfoText("Filtrage par type de noeud:");
-        
-        createVRButton("Afficher Serveurs uniquement", () => {
-            filterByType('server');
-        }, "#ef4444");
-        
-        createVRButton("Afficher Databases uniquement", () => {
-            filterByType('database');
-        }, "#8b5cf6");
-        
-        createVRButton("Afficher APIs uniquement", () => {
-            filterByType('api');
-        }, "#3b82f6");
-        
-        createVRButton("Afficher Services uniquement", () => {
-            filterByType('service');
-        }, "#10b981");
-        
-        createSeparator();
-        
-        createVRButton("Reinitialiser Filtres", () => {
-            if (window.graphManager && window.graphManager.originalGraph) {
-                window.graphManager.renderGraph(window.graphManager.originalGraph);
-                showVRNotification(scene, "Filtres reinitialises", 2000);
-            }
-        }, "#f59e0b");
-    }
-    
-    // PAGE EXPORT
-    function showExportPage() {
-        currentPage = 'export';
-        clearPanel();
-        createTitle("Export & Sauvegarde");
-        
-        createVRButton("Retour", () => showMainPage(), "#475569");
-        createSeparator();
-        
-        createInfoText("Export disponible en mode desktop");
-        createInfoText("Sortez de VR pour exporter les donnees");
-        
-        createVRButton("Capture d'ecran VR", () => {
-            captureVRScreenshot();
-        }, "#10b981");
-        
-        createSeparator();
-        
-        if (window.graphManager && window.graphManager.currentGraph) {
-            const nodeCount = window.graphManager.currentGraph.nodes?.length || 0;
-            const edgeCount = window.graphManager.currentGraph.edges?.length || 0;
-            createInfoText(`Graphe actuel: ${nodeCount} noeuds, ${edgeCount} aretes`);
-        }
-    }
-    
-    // PAGE PARAMETRES
-    function showSettingsPage() {
-        currentPage = 'settings';
-        clearPanel();
-        createTitle("Parametres VR");
-        
-        createVRButton("Retour", () => showMainPage(), "#475569");
-        createSeparator();
-        
-        createInfoText("Affichage:");
-        
-        createVRButton("Lumieres: Normal", () => {
-            adjustLighting('normal');
-        }, "#1e293b");
-        
-        createVRButton("Lumieres: Forte", () => {
-            adjustLighting('bright');
-        }, "#1e293b");
-        
-        createVRButton("Lumieres: Sombre", () => {
-            adjustLighting('dark');
-        }, "#1e293b");
-        
-        createSeparator();
-        
-        createVRButton("Infos Noeuds 3D: ON", () => {
-            showVRNotification(scene, "Panneaux 3D toujours actives", 2000);
-        }, "#10b981");
-        
-        createVRButton("Reinitialiser Position", () => {
-            // Repositionner le menu devant l'utilisateur
-            if (scene.activeCamera) {
-                const camera = scene.activeCamera;
-                const forward = camera.getForwardRay(5).direction;
-                menuPanel.position = camera.position.add(forward.scale(5));
-                menuPanel.position.y = 1.5;
-                showVRNotification(scene, "Menu repositionne", 1500);
-            }
-        }, "#3b82f6");
-    }
-    
-    // === FONCTIONS HELPER POUR LES ACTIONS ===
-    
-    function loadPredefinedGraph(filename) {
-        if (!window.graphManager) return;
-        
-        console.log('[VR] Debut chargement:', filename);
-        showVRNotification(scene, "Chargement...", 1500);
-        
-        // Sauvegarder l'état VR
-        const wasInVR = window.isInVRMode;
-        
-        fetch(`/babylon-python-student-project/frontend/assets/${filename}`)
-            .then(response => {
-                console.log('[VR] Fetch response recu');
-                return response.json();
-            })
-            .then(graphData => {
-                console.log('[VR] JSON parse, still in VR:', window.isInVRMode);
-                
-                // S'assurer qu'on est toujours en VR avant de render
-                if (wasInVR && window.isInVRMode) {
-                    // Utiliser requestAnimationFrame pour synchroniser avec le rendu VR
-                    requestAnimationFrame(() => {
-                        window.graphManager.renderGraph(graphData);
-                        showVRNotification(scene, `${filename} charge`, 2500);
-                    });
-                } else {
-                    window.graphManager.renderGraph(graphData);
-                    if (wasInVR && !window.isInVRMode) {
-                        console.error('[VR] Session perdue pendant le chargement!');
-                    }
-                }
-            })
-            .catch(error => {
-                console.error('[VR] Erreur chargement:', error);
-                showVRNotification(scene, "Fichier introuvable", 2500);
-            });
-    }
-    
-    function applyLayoutVR(layoutType) {
-        console.log('[VR] Apply layout:', layoutType);
-        
-        if (window.graphManager && window.graphManager.currentGraph) {
-            // Utiliser requestAnimationFrame pour synchroniser avec le rendu VR
-            requestAnimationFrame(() => {
-                window.graphManager.applyLayout(layoutType);
-                showVRNotification(scene, `Layout ${layoutType} applique`, 2000);
-            });
-        } else {
-            showVRNotification(scene, "Chargez d'abord un graphe", 2500);
-        }
-    }
-    
-    function filterByType(type) {
-        console.log('[VR] Filter by type:', type);
-        
-        if (!window.graphManager || !window.graphManager.originalGraph) {
-            showVRNotification(scene, "Aucun graphe charge", 2500);
-            return;
-        }
-        
-        const original = window.graphManager.originalGraph;
-        const filteredNodes = original.nodes.filter(node => node.type === type);
-        const filteredNodeIds = new Set(filteredNodes.map(n => n.id));
-        const filteredEdges = original.edges.filter(edge => 
-            filteredNodeIds.has(edge.source) && filteredNodeIds.has(edge.target)
-        );
-        
-        const filteredGraph = {
-            nodes: filteredNodes,
-            edges: filteredEdges,
-            metadata: original.metadata
-        };
-        
-        // Utiliser requestAnimationFrame pour synchroniser avec le rendu VR
-        requestAnimationFrame(() => {
-            window.graphManager.renderGraph(filteredGraph);
-            showVRNotification(scene, `Filtre: ${filteredNodes.length} noeuds ${type}`, 2500);
-        });
-    }
-    
-    function captureVRScreenshot() {
-        if (scene && scene.getEngine()) {
-            BABYLON.Tools.CreateScreenshot(scene.getEngine(), scene.activeCamera, { precision: 2 });
-            showVRNotification(scene, "Capture d'ecran enregistree", 2000);
-        }
-    }
-    
-    function adjustLighting(mode) {
-        const lights = scene.lights;
-        
-        switch(mode) {
-            case 'bright':
-                lights.forEach(light => light.intensity *= 1.5);
-                showVRNotification(scene, "Lumieres augmentees", 2000);
-                break;
-            case 'dark':
-                lights.forEach(light => light.intensity *= 0.5);
-                showVRNotification(scene, "Lumieres diminuees", 2000);
-                break;
-            case 'normal':
-            default:
-                // Réinitialiser aux valeurs par défaut
-                lights.forEach((light, i) => {
-                    if (light.name === 'keyLight') light.intensity = 4.0;
-                    else if (light.name === 'fillLight') light.intensity = 1.5;
-                    else if (light.name === 'backLight') light.intensity = 2.0;
-                    else if (light.name === 'ambientLight') light.intensity = 1.2;
-                    else light.intensity = 1.0;
-                });
-                showVRNotification(scene, "Lumieres normales", 2000);
-                break;
-        }
-    }
-    
-    // === INITIALISATION DU MENU ===
-    
-    // Afficher la page principale au démarrage
-    showMainPage();
-    
-    // Bouton flottant pour afficher/masquer le menu
-    const toggleButton = BABYLON.MeshBuilder.CreateSphere("vrMenuToggle", {
-        diameter: 0.3
-    }, scene);
-    toggleButton.position = new BABYLON.Vector3(-2, 1.5, 2);
-    
-    const toggleMaterial = new BABYLON.StandardMaterial("toggleMat", scene);
-    toggleMaterial.diffuseColor = new BABYLON.Color3(0.23, 0.51, 0.96);
-    toggleMaterial.emissiveColor = new BABYLON.Color3(0.23, 0.51, 0.96);
-    toggleButton.material = toggleMaterial;
-    
-    toggleButton.actionManager = new BABYLON.ActionManager(scene);
-    toggleButton.actionManager.registerAction(
-        new BABYLON.ExecuteCodeAction(
-            BABYLON.ActionManager.OnPickTrigger,
-            () => {
-                if (scene.vrMenuHidden) {
-                    menuPanel.setEnabled(true);
-                    scene.vrMenuHidden = false;
-                    showVRNotification(scene, "Menu affiché", 1000);
-                } else {
-                    menuPanel.setEnabled(false);
-                    scene.vrMenuHidden = true;
-                    showVRNotification(scene, "Menu masqué", 1000);
-                }
-            }
-        )
-    );
-    
-    // Stocker les références
-    scene.vrMenu = menuPanel;
-    scene.vrMenuToggle = toggleButton;
-    
-    console.log("Menu VR 3D créé avec succès");
-}
-
-// Afficher une notification temporaire en VR
-function showVRNotification(scene, message, duration = 2000) {
-    const notifPanel = BABYLON.MeshBuilder.CreatePlane("vrNotification", {
-        width: 3,
-        height: 0.5
-    }, scene);
-    
-    notifPanel.position = new BABYLON.Vector3(0, 2.5, 3);
-    notifPanel.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
-    
-    const notifTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateForMesh(notifPanel, 1024, 170);
-    
-    const notifBg = new BABYLON.GUI.Rectangle();
-    notifBg.background = "rgba(59, 130, 246, 0.9)";
-    notifBg.cornerRadius = 20;
-    notifBg.thickness = 0;
-    notifTexture.addControl(notifBg);
-    
-    const notifText = new BABYLON.GUI.TextBlock();
-    notifText.text = message;
-    notifText.color = "white";
-    notifText.fontSize = 60;
-    notifText.fontWeight = "bold";
-    notifTexture.addControl(notifText);
-    
-    // Animation d'apparition manuelle (compatible VR)
-    notifPanel.scaling = new BABYLON.Vector3(0, 0, 0);
-    let scaleInFrame = 0;
-    const scaleInDuration = 10;
-    const scaleInObserver = scene.onBeforeRenderObservable.add(() => {
-        scaleInFrame++;
-        const progress = Math.min(scaleInFrame / scaleInDuration, 1);
-        const easedProgress = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
-        notifPanel.scaling = BABYLON.Vector3.Lerp(
-            new BABYLON.Vector3(0, 0, 0),
-            new BABYLON.Vector3(1, 1, 1),
-            easedProgress
-        );
-        if (progress >= 1) {
-            scene.onBeforeRenderObservable.remove(scaleInObserver);
-        }
-    });
-    
-    // Disparition après le délai
-    setTimeout(() => {
-        let scaleOutFrame = 0;
-        const scaleOutDuration = 10;
-        const scaleOutObserver = scene.onBeforeRenderObservable.add(() => {
-            scaleOutFrame++;
-            const progress = Math.min(scaleOutFrame / scaleOutDuration, 1);
-            const easedProgress = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
-            notifPanel.scaling = BABYLON.Vector3.Lerp(
-                new BABYLON.Vector3(1, 1, 1),
-                new BABYLON.Vector3(0, 0, 0),
-                easedProgress
-            );
-            if (progress >= 1) {
-                scene.onBeforeRenderObservable.remove(scaleOutObserver);
-                notifPanel.dispose();
-            }
-        });
-    }, duration);
 }

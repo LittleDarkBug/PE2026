@@ -13,40 +13,6 @@ class GraphManager {
         };
         this.selectedNodes = [];
         this.API_BASE = 'http://127.0.0.1:5000/api';
-        
-        // Configuration XR/VR optimisée
-        this.xrOptimizations = {
-            maxNodesForFullDetail: 100,  // Au-delà, réduire les détails
-            maxNodesForEdges: 200,       // Au-delà, masquer les arêtes
-            nodeSegmentsVR: 16,          // Segments des sphères en VR
-            nodeSegmentsDesktop: 32,     // Segments en desktop
-            edgeSegmentsVR: 6,           // Segments des cylindres en VR
-            edgeSegmentsDesktop: 8       // Segments en desktop
-        };
-    }
-
-    /**
-     * Vérifie si on est en mode VR
-     */
-    isInVR() {
-        return this.scene.activeCamera && this.scene.activeCamera.getClassName() === 'WebXRCamera';
-    }
-    
-    /**
-     * Retourne la configuration optimale selon le mode et la taille du graphe
-     */
-    getOptimalConfig(nodeCount) {
-        const isVR = this.isInVR();
-        const config = {
-            nodeSegments: isVR ? this.xrOptimizations.nodeSegmentsVR : this.xrOptimizations.nodeSegmentsDesktop,
-            edgeSegments: isVR ? this.xrOptimizations.edgeSegmentsVR : this.xrOptimizations.edgeSegmentsDesktop,
-            showEdges: nodeCount <= this.xrOptimizations.maxNodesForEdges,
-            useFullDetail: nodeCount <= this.xrOptimizations.maxNodesForFullDetail,
-            useShadows: isVR && nodeCount <= this.xrOptimizations.maxNodesForFullDetail
-        };
-        
-        console.log(`[XR Config] Nodes: ${nodeCount}, VR: ${isVR}, Config:`, config);
-        return config;
     }
 
     /**
@@ -167,28 +133,13 @@ class GraphManager {
      * Rend le graphe en 3D dans la scène Babylon.js
      */
     renderGraph(graphData) {
-        console.log('[VR] renderGraph appelé, mode VR:', this.isInVR());
-        
-        // En VR, ne pas interrompre le rendu
-        if (this.isInVR()) {
-            // Désactiver temporairement le rendu automatique pour éviter les conflits
-            const wasRunning = this.engine.stopRenderLoop;
-        }
-        
         // Nettoyer l'ancien graphe
         this.clearGraph();
         
         const nodes = graphData.nodes || [];
         const edges = graphData.edges || [];
         
-        console.log(`[VR] Rendu de ${nodes.length} nœuds et ${edges.length} arêtes`);
-        
-        // CRITIQUE : Initialiser les positions si elles n'existent pas
-        this.initializePositions(nodes);
-        
-        // OPTIMISATION XR : Obtenir la configuration optimale
-        const xrConfig = this.getOptimalConfig(nodes.length);
-        this.currentXRConfig = xrConfig; // Stocker pour utilisation par createNode/createEdge
+        console.log(`Rendu de ${nodes.length} nœuds et ${edges.length} arêtes`);
         
         // Sauvegarder le graphe actuel pour pouvoir le restaurer
         this.currentGraph = graphData;
@@ -198,8 +149,8 @@ class GraphManager {
             this.originalGraph = JSON.parse(JSON.stringify(graphData));
         }
         
-        // Mettre à jour les statistiques (seulement en mode desktop)
-        if (window.uiManager && !this.isInVR()) {
+        // Mettre à jour les statistiques
+        if (window.uiManager) {
             window.uiManager.updateStats();
         }
         
@@ -212,160 +163,29 @@ class GraphManager {
             this.graphMeshes.nodes.push(nodeMesh);
             nodeMap[nodeData.id] = nodeMesh;
             
-            // Shadow generator déjà géré dans createNode()
-            // (pas besoin de le faire ici)
-        });
-        
-        console.log(`[VR] ${this.graphMeshes.nodes.length} nœuds créés dans la scène`);
-        
-        // Debug VR : Vérifier la visibilité des nœuds
-        if (this.isInVR() && this.graphMeshes.nodes.length > 0) {
-            const firstNode = this.graphMeshes.nodes[0];
-            const camPos = this.scene.activeCamera ? this.scene.activeCamera.position : new BABYLON.Vector3(0, 0, 0);
-            const distance = BABYLON.Vector3.Distance(camPos, firstNode.position);
-            console.log(`[VR] Caméra position: (${camPos.x.toFixed(2)}, ${camPos.y.toFixed(2)}, ${camPos.z.toFixed(2)})`);
-            console.log(`[VR] Premier nœud position: (${firstNode.position.x.toFixed(2)}, ${firstNode.position.y.toFixed(2)}, ${firstNode.position.z.toFixed(2)})`);
-            console.log(`[VR] Distance caméra -> nœud: ${distance.toFixed(2)}`);
-            console.log(`[VR] Diamètre nœud: ${this.isInVR() ? '1.5' : '0.6'}`);
-            
-            // Vérifier si les nœuds sont visibles (sans isInFrustum qui crash)
-            this.graphMeshes.nodes.forEach((node, i) => {
-                if (i < 3) {
-                    console.log(`[VR] Node ${i}: visible=${node.isVisible}, enabled=${node.isEnabled()}, material=${node.material ? 'OK' : 'NONE'}`);
-                }
-            });
-        }
-        
-        // Créer les arêtes (si config XR le permet)
-        if (xrConfig.showEdges) {
-            edges.forEach((edgeData, index) => {
-                const sourceNode = nodeMap[edgeData.source];
-                const targetNode = nodeMap[edgeData.target];
-                
-                if (sourceNode && targetNode) {
-                    const edgeMesh = this.createEdge(
-                        sourceNode.position,
-                        targetNode.position,
-                        edgeData,
-                        index
-                    );
-                    this.graphMeshes.edges.push(edgeMesh);
-                }
-            });
-        } else {
-            console.log(`[XR Optim] ${edges.length} arêtes masquées pour performance`);
-        }
-        
-        // CRITIQUE VR : Centrer le graphe devant la caméra
-        if (this.isInVR() && this.graphMeshes.nodes.length > 0) {
-            this.centerGraphForVR();
-        }
-        
-        console.log('[VR] Graphe rendu avec succès, VR maintenu:', this.isInVR());
-    }
-    
-    /**
-     * Centre le graphe devant la caméra VR
-     */
-    centerGraphForVR() {
-        if (!this.scene.activeCamera) return;
-        
-        const camPos = this.scene.activeCamera.position;
-        console.log(`[VR] Centrage du graphe - caméra à (${camPos.x.toFixed(2)}, ${camPos.y.toFixed(2)}, ${camPos.z.toFixed(2)})`);
-        
-        // Calculer le centre du graphe
-        let sumX = 0, sumY = 0, sumZ = 0;
-        this.graphMeshes.nodes.forEach(node => {
-            sumX += node.position.x;
-            sumY += node.position.y;
-            sumZ += node.position.z;
-        });
-        const count = this.graphMeshes.nodes.length;
-        const centerX = sumX / count;
-        const centerY = sumY / count;
-        const centerZ = sumZ / count;
-        
-        console.log(`[VR] Centre graphe: (${centerX.toFixed(2)}, ${centerY.toFixed(2)}, ${centerZ.toFixed(2)})`);
-        
-        // Décaler pour placer le centre à 5 mètres devant la caméra
-        const targetZ = camPos.z - 5;  // 5 mètres devant
-        const targetY = camPos.y;      // Même hauteur que la caméra
-        const targetX = camPos.x;      // Même X que la caméra
-        
-        const offsetX = targetX - centerX;
-        const offsetY = targetY - centerY;
-        const offsetZ = targetZ - centerZ;
-        
-        console.log(`[VR] Décalage appliqué: (${offsetX.toFixed(2)}, ${offsetY.toFixed(2)}, ${offsetZ.toFixed(2)})`);
-        
-        // Appliquer le décalage à tous les nœuds
-        this.graphMeshes.nodes.forEach(node => {
-            node.position.x += offsetX;
-            node.position.y += offsetY;
-            node.position.z += offsetZ;
-        });
-        
-        // Mettre à jour les arêtes
-        this.updateEdges();
-        
-        console.log(`[VR] Graphe centré devant vous à ${Math.abs(targetZ - camPos.z).toFixed(2)}m`);
-    }
-    
-    /**
-     * Initialise les positions des nœuds s'ils n'en ont pas
-     * CRITIQUE pour XR : évite que tous les nœuds soient à (0,0,0)
-     */
-    initializePositions(nodes) {
-        if (!nodes || nodes.length === 0) {
-            console.warn('[VR] Aucun nœud à positionner');
-            return;
-        }
-        
-        // Compter combien de nœuds ont des positions non-nulles
-        const nodesWithPositions = nodes.filter(node => 
-            node.position && 
-            (Math.abs(node.position.x) > 0.01 || Math.abs(node.position.y) > 0.01 || Math.abs(node.position.z) > 0.01)
-        ).length;
-        
-        console.log(`[VR] Nœuds avec positions: ${nodesWithPositions}/${nodes.length}`);
-        
-        // Si plus de 50% des nœuds ont des positions, on garde celles-ci
-        if (nodesWithPositions > nodes.length / 2) {
-            console.log('[VR] Positions existantes conservées');
-            // Initialiser quand même ceux qui n'ont pas de position
-            nodes.forEach((node, i) => {
-                if (!node.position || (Math.abs(node.position.x) < 0.01 && Math.abs(node.position.y) < 0.01 && Math.abs(node.position.z) < 0.01)) {
-                    const angle = (i / nodes.length) * Math.PI * 2;
-                    const radius = Math.max(5, nodes.length * 0.5);
-                    node.position = {
-                        x: Math.cos(angle) * radius,
-                        y: 0,
-                        z: Math.sin(angle) * radius
-                    };
-                    console.log(`[VR] Position générée pour ${node.id}: (${node.position.x.toFixed(2)}, ${node.position.y.toFixed(2)}, ${node.position.z.toFixed(2)})`);
-                }
-            });
-            return;
-        }
-        
-        console.log('[VR] GENERATION COMPLETE - layout circulaire pour tous les nœuds');
-        
-        // Générer un layout circulaire par défaut pour TOUS
-        const nodeCount = nodes.length;
-        const radius = Math.max(5, nodeCount * 0.5);
-        
-        nodes.forEach((node, i) => {
-            const angle = (i / nodeCount) * Math.PI * 2;
-            node.position = {
-                x: Math.cos(angle) * radius,
-                y: 0,
-                z: Math.sin(angle) * radius
-            };
-            if (i < 5) { // Afficher les 5 premiers
-                console.log(`[VR] Node ${node.id}: pos=(${node.position.x.toFixed(2)}, ${node.position.y.toFixed(2)}, ${node.position.z.toFixed(2)})`);
+            // Ajouter au shadow generator si disponible
+            if (this.scene.shadowGenerator) {
+                this.scene.shadowGenerator.addShadowCaster(nodeMesh);
             }
         });
-        console.log(`[VR] ${nodeCount} nœuds positionnés sur cercle de rayon ${radius.toFixed(2)}`);
+        
+        // Créer les arêtes
+        edges.forEach((edgeData, index) => {
+            const sourceNode = nodeMap[edgeData.source];
+            const targetNode = nodeMap[edgeData.target];
+            
+            if (sourceNode && targetNode) {
+                const edgeMesh = this.createEdge(
+                    sourceNode.position,
+                    targetNode.position,
+                    edgeData,
+                    index
+                );
+                this.graphMeshes.edges.push(edgeMesh);
+            }
+        });
+        
+        console.log('Graphe rendu avec succès');
     }
 
     /**
@@ -374,20 +194,10 @@ class GraphManager {
     createNode(nodeData, index) {
         const position = nodeData.position || { x: 0, y: 0, z: 0 };
         
-        // Debug VR : vérifier les positions
-        if (index < 3 || this.isInVR()) {
-            console.log(`[VR] createNode ${nodeData.id}: pos=(${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)})`);
-        }
-        
-        // OPTIMISÉ POUR XR/VR - Utiliser la config dynamique
-        const config = this.currentXRConfig || this.getOptimalConfig(1);
-        
-        // Créer la sphère du nœud avec segments adaptés au mode
-        // TAILLE AUGMENTÉE pour debug VR : 1.5 au lieu de 0.6
-        const diameter = this.isInVR() ? 1.5 : 0.6;
+        // Créer la sphère du nœud avec plus de segments pour une meilleure qualité
         const sphere = BABYLON.MeshBuilder.CreateSphere(
             `node_${nodeData.id}`,
-            { diameter: diameter, segments: config.nodeSegments },
+            { diameter: 0.6, segments: 32 },
             this.scene
         );
         
@@ -397,11 +207,7 @@ class GraphManager {
             position.z
         );
         
-        if (index === 0) {
-            console.log(`[VR] PREMIER NOEUD créé: ${nodeData.id}, diameter=${diameter}, pos=(${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)})`);
-        }
-        
-        // Matériau PBR pour rendu réaliste - OPTIMISÉ XR
+        // Matériau PBR pour rendu réaliste
         const material = new BABYLON.PBRMetallicRoughnessMaterial(`nodeMat_${nodeData.id}`, this.scene);
         
         // Colorer selon le type si disponible
@@ -413,24 +219,17 @@ class GraphManager {
         material.roughness = 0.4;
         material.emissiveColor = new BABYLON.Color3(color.r * 0.2, color.g * 0.2, color.b * 0.2);
         
-        // PAS d'alpha blending - meilleure performance XR
-        // material.alpha = 1.0 par défaut
+        // Activer l'alpha blending pour transparence
+        material.alpha = 0.95;
+        material.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHABLEND;
         
         sphere.material = material;
         
-        // OPTIMISATION XR : Ombres conditionnelles selon la taille du graphe
-        sphere.receiveShadows = config.useShadows;
+        // Activer les ombres pour ce mesh
+        sphere.receiveShadows = true;
         
-        // Ajouter au shadow generator si activé et disponible
-        if (config.useShadows && this.scene.shadowGenerator) {
-            this.scene.shadowGenerator.addShadowCaster(sphere);
-        }
-        
-        // Rendre interactif - COMPATIBLE XR
+        // Rendre interactif
         sphere.isPickable = true;
-        
-        // CRITIQUE XR : Utiliser observable au lieu de ActionManager
-        // ActionManager peut causer des problèmes en WebXR
         sphere.actionManager = new BABYLON.ActionManager(this.scene);
         
         // Stocker les données du nœud
@@ -439,7 +238,7 @@ class GraphManager {
             type: 'graph-node'
         };
         
-        // Action au clic - Compatible XR pointer
+        // Action au clic
         sphere.actionManager.registerAction(
             new BABYLON.ExecuteCodeAction(
                 BABYLON.ActionManager.OnPickTrigger,
@@ -487,7 +286,7 @@ class GraphManager {
     }
 
     /**
-     * Crée une arête 3D cylindrique entre deux nœuds - OPTIMISÉ XR
+     * Crée une arête 3D cylindrique entre deux nœuds
      */
     createEdge(startPos, endPos, edgeData, index) {
         // Calculer la direction et la longueur
@@ -495,17 +294,13 @@ class GraphManager {
         const length = direction.length();
         const center = BABYLON.Vector3.Center(startPos, endPos);
         
-        // OPTIMISÉ XR - Utiliser la config dynamique
-        const config = this.currentXRConfig || this.getOptimalConfig(1);
-        
         // Créer un cylindre pour l'arête (vraie 3D)
-        // tessellation adaptée au mode (6-8 segments)
         const edge = BABYLON.MeshBuilder.CreateCylinder(
             `edge_${index}`,
             {
                 height: length,
                 diameter: 0.05,
-                tessellation: config.edgeSegments
+                tessellation: 8
             },
             this.scene
         );
@@ -521,20 +316,16 @@ class GraphManager {
         );
         edge.rotationQuaternion = quaternion;
         
-        // Matériau PBR pour l'arête - OPTIMISÉ XR
+        // Matériau PBR pour l'arête
         const edgeMaterial = new BABYLON.PBRMetallicRoughnessMaterial(`edgeMat_${index}`, this.scene);
         edgeMaterial.baseColor = new BABYLON.Color3(0.4, 0.6, 0.9);
         edgeMaterial.metallic = 0.5;
         edgeMaterial.roughness = 0.3;
-        
-        // OPTIMISATION XR : Alpha réduit mais pas de transparencyMode pour performance
-        edgeMaterial.alpha = 0.8; // Visible mais pas trop coûteux
+        edgeMaterial.alpha = 0.7;
+        edgeMaterial.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHABLEND;
         
         edge.material = edgeMaterial;
-        edge.isPickable = false; // Les arêtes ne sont pas sélectionnables en XR
-        
-        // OPTIMISATION XR : Pas d'ombres sur les arêtes (trop coûteux)
-        edge.receiveShadows = false;
+        edge.isPickable = false;
         
         // Stocker les données de l'arête
         edge.metadata = {
@@ -595,23 +386,18 @@ class GraphManager {
         
         advancedTexture.addControl(textBlock);
         
-        // Animation d'apparition manuelle (compatible VR)
+        // Animation d'apparition
         plane.scaling = new BABYLON.Vector3(0, 0, 0);
-        let frame = 0;
-        const duration = 10;
-        const observer = this.scene.onBeforeRenderObservable.add(() => {
-            frame++;
-            const progress = Math.min(frame / duration, 1);
-            const easedProgress = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
-            plane.scaling = BABYLON.Vector3.Lerp(
-                new BABYLON.Vector3(0, 0, 0),
-                new BABYLON.Vector3(1, 1, 1),
-                easedProgress
-            );
-            if (progress >= 1) {
-                this.scene.onBeforeRenderObservable.remove(observer);
-            }
-        });
+        BABYLON.Animation.CreateAndStartAnimation(
+            "labelAppear",
+            plane,
+            "scaling",
+            60,
+            10,
+            new BABYLON.Vector3(0, 0, 0),
+            new BABYLON.Vector3(1, 1, 1),
+            BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT
+        );
         
         return plane;
     }
@@ -640,9 +426,6 @@ class GraphManager {
                 color.g * 0.2,
                 color.b * 0.2
             );
-            
-            // Masquer l'info panel 3D
-            this.hideNodeInfo3D();
         } else {
             // Sélectionner
             this.selectedNodes.push(nodeMesh);
@@ -658,9 +441,6 @@ class GraphManager {
             
             // Augmenter l'emissive
             nodeMesh.material.emissiveColor = new BABYLON.Color3(1, 0.9, 0);
-            
-            // Afficher l'info panel 3D amélioré
-            this.showNodeInfo3D(nodeMesh);
         }
         
         // Émettre un événement personnalisé
@@ -670,220 +450,6 @@ class GraphManager {
                 selected: index === -1
             }
         }));
-    }
-    
-    /**
-     * Affiche un panneau d'information 3D amélioré au-dessus du nœud
-     */
-    showNodeInfo3D(nodeMesh) {
-        // Masquer l'ancien panneau s'il existe
-        this.hideNodeInfo3D();
-        
-        const nodeData = nodeMesh.metadata.nodeData;
-        
-        // Créer un plan pour le panneau d'information amélioré
-        const infoPanel = BABYLON.MeshBuilder.CreatePlane("nodeInfoPanel", {
-            width: 3.5,
-            height: 2.5
-        }, this.scene);
-        
-        // Positionner au-dessus du nœud avec un léger offset
-        infoPanel.position = nodeMesh.position.clone();
-        infoPanel.position.y += 1.8;
-        
-        // Faire toujours face à la caméra (billboard)
-        infoPanel.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
-        
-        // Créer le matériau avec texture dynamique haute résolution
-        const infoPanelMaterial = new BABYLON.StandardMaterial("infoMaterial", this.scene);
-        const texture = new BABYLON.DynamicTexture("infoTexture", {width: 1400, height: 1000}, this.scene, false);
-        
-        const ctx = texture.getContext();
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        
-        // Fond avec dégradé subtil
-        const gradient = ctx.createLinearGradient(0, 0, 0, 1000);
-        gradient.addColorStop(0, 'rgba(15, 23, 42, 0.98)');
-        gradient.addColorStop(1, 'rgba(30, 41, 59, 0.98)');
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, 1400, 1000);
-        
-        // Bordure double avec effet de profondeur
-        ctx.strokeStyle = '#1e293b';
-        ctx.lineWidth = 12;
-        ctx.strokeRect(6, 6, 1388, 988);
-        
-        ctx.strokeStyle = '#3b82f6';
-        ctx.lineWidth = 4;
-        ctx.strokeRect(12, 12, 1376, 976);
-        
-        // Badge de type en haut à droite
-        const typeColors = {
-            'server': '#ef4444',
-            'database': '#8b5cf6',
-            'api': '#3b82f6',
-            'service': '#10b981',
-            'default': '#64748b'
-        };
-        const typeColor = typeColors[nodeData.type] || typeColors['default'];
-        
-        ctx.fillStyle = typeColor;
-        ctx.fillRect(1100, 40, 260, 80);
-        ctx.font = 'bold 45px Arial';
-        ctx.fillStyle = '#ffffff';
-        ctx.textAlign = 'center';
-        ctx.fillText((nodeData.type || 'N/A').toUpperCase(), 1230, 90);
-        ctx.textAlign = 'left';
-        
-        // Titre avec ombre
-        ctx.shadowColor = 'rgba(59, 130, 246, 0.5)';
-        ctx.shadowBlur = 20;
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 2;
-        ctx.font = 'bold 70px Arial';
-        ctx.fillStyle = '#60a5fa';
-        const titleText = nodeData.label || nodeData.id;
-        const maxTitleWidth = 1000;
-        let displayTitle = titleText;
-        if (ctx.measureText(titleText).width > maxTitleWidth) {
-            displayTitle = titleText.substring(0, 20) + '...';
-        }
-        ctx.fillText(displayTitle, 50, 100);
-        ctx.shadowBlur = 0;
-        
-        // Ligne séparatrice avec dégradé
-        const lineGradient = ctx.createLinearGradient(50, 150, 1350, 150);
-        lineGradient.addColorStop(0, 'rgba(59, 130, 246, 0)');
-        lineGradient.addColorStop(0.5, 'rgba(59, 130, 246, 0.8)');
-        lineGradient.addColorStop(1, 'rgba(59, 130, 246, 0)');
-        ctx.strokeStyle = lineGradient;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(50, 150);
-        ctx.lineTo(1350, 150);
-        ctx.stroke();
-        
-        // Informations avec icônes
-        ctx.font = '50px Arial';
-        ctx.fillStyle = '#f1f5f9';
-        let yPos = 240;
-        const lineHeight = 85;
-        
-        // ID avec icône
-        ctx.fillStyle = '#94a3b8';
-        ctx.font = '40px Arial';
-        ctx.fillText('ID:', 80, yPos);
-        ctx.fillStyle = '#f1f5f9';
-        ctx.font = '48px monospace';
-        ctx.fillText(nodeData.id, 200, yPos);
-        yPos += lineHeight;
-        
-        // Position
-        ctx.fillStyle = '#94a3b8';
-        ctx.font = '40px Arial';
-        ctx.fillText('Position:', 80, yPos);
-        ctx.fillStyle = '#f1f5f9';
-        ctx.font = '45px monospace';
-        ctx.fillText(`(${nodeMesh.position.x.toFixed(1)}, ${nodeMesh.position.y.toFixed(1)}, ${nodeMesh.position.z.toFixed(1)})`, 280, yPos);
-        yPos += lineHeight;
-        
-        // Connexions avec barre visuelle
-        if (this.currentGraph && this.currentGraph.edges) {
-            const connections = this.currentGraph.edges.filter(
-                edge => edge.source === nodeData.id || edge.target === nodeData.id
-            ).length;
-            
-            ctx.fillStyle = '#94a3b8';
-            ctx.font = '40px Arial';
-            ctx.fillText('Connexions:', 80, yPos);
-            ctx.fillStyle = '#10b981';
-            ctx.font = 'bold 48px Arial';
-            ctx.fillText(connections.toString(), 340, yPos);
-            
-            // Barre de connexions
-            const barWidth = Math.min(connections * 30, 700);
-            ctx.fillStyle = 'rgba(16, 185, 129, 0.2)';
-            ctx.fillRect(450, yPos - 30, 700, 35);
-            ctx.fillStyle = '#10b981';
-            ctx.fillRect(450, yPos - 30, barWidth, 35);
-            
-            yPos += lineHeight + 40;
-        }
-        
-        // Séparateur
-        ctx.strokeStyle = 'rgba(148, 163, 184, 0.3)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(80, yPos - 20);
-        ctx.lineTo(1320, yPos - 20);
-        ctx.stroke();
-        
-        // Instructions avec icône
-        ctx.font = 'italic 38px Arial';
-        ctx.fillStyle = '#64748b';
-        ctx.fillText('💡 Cliquez à nouveau pour désélectionner', 80, yPos + 40);
-        
-        texture.update();
-        
-        infoPanelMaterial.diffuseTexture = texture;
-        infoPanelMaterial.emissiveTexture = texture;
-        infoPanelMaterial.emissiveColor = new BABYLON.Color3(0.9, 0.9, 0.9);
-        infoPanelMaterial.disableLighting = true;
-        infoPanelMaterial.backFaceCulling = false;
-        infoPanelMaterial.alpha = 0.98;
-        
-        infoPanel.material = infoPanelMaterial;
-        infoPanel.isPickable = false; // Ne pas interférer avec les clics
-        
-        // Animation d'apparition manuelle (compatible VR)
-        infoPanel.scaling = new BABYLON.Vector3(0, 0, 0);
-        let scaleFrame = 0;
-        const scaleDuration = 15;
-        const scaleObserver = this.scene.onBeforeRenderObservable.add(() => {
-            scaleFrame++;
-            const progress = Math.min(scaleFrame / scaleDuration, 1);
-            const easedProgress = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
-            infoPanel.scaling = BABYLON.Vector3.Lerp(
-                new BABYLON.Vector3(0, 0, 0),
-                new BABYLON.Vector3(1, 1, 1),
-                easedProgress
-            );
-            if (progress >= 1) {
-                this.scene.onBeforeRenderObservable.remove(scaleObserver);
-            }
-        });
-        
-        // Légère rotation oscillante pour attirer l'attention
-        const rotationAnim = new BABYLON.Animation(
-            "infoPanelFloat",
-            "rotation.z",
-            30,
-            BABYLON.Animation.ANIMATIONTYPE_FLOAT,
-            BABYLON.Animation.ANIMATIONLOOPMODE_CYCLE
-        );
-        
-        const keys = [
-            { frame: 0, value: -0.02 },
-            { frame: 30, value: 0.02 },
-            { frame: 60, value: -0.02 }
-        ];
-        rotationAnim.setKeys(keys);
-        infoPanel.animations.push(rotationAnim);
-        this.scene.beginAnimation(infoPanel, 0, 60, true);
-        
-        // Stocker la référence
-        this.currentInfoPanel = infoPanel;
-    }
-    
-    /**
-     * Masque le panneau d'information 3D
-     */
-    hideNodeInfo3D() {
-        if (this.currentInfoPanel) {
-            this.currentInfoPanel.dispose();
-            this.currentInfoPanel = null;
-        }
     }
 
     /**
@@ -977,54 +543,19 @@ class GraphManager {
      * Nettoie le graphe actuel
      */
     clearGraph() {
-        console.log('clearGraph called, VR mode:', this.isInVR());
+        // Supprimer tous les nœuds
+        this.graphMeshes.nodes.forEach(node => {
+            if (node.getChildren) {
+                node.getChildren().forEach(child => child.dispose());
+            }
+            node.dispose();
+        });
         
-        // Masquer le panneau d'information 3D
-        this.hideNodeInfo3D();
-        
-        // En mode VR, dispose de manière plus douce pour ne pas perturber la session
-        if (this.isInVR()) {
-            // Désactiver temporairement les meshes avant de les disposer
-            this.graphMeshes.nodes.forEach(node => {
-                node.isVisible = false;
-                if (node.getChildren) {
-                    node.getChildren().forEach(child => {
-                        child.isVisible = false;
-                    });
-                }
-            });
-            
-            this.graphMeshes.edges.forEach(edge => {
-                edge.isVisible = false;
-            });
-            
-            // Disposer après un micro-délai en VR
-            setTimeout(() => {
-                this.graphMeshes.nodes.forEach(node => {
-                    if (node.getChildren) {
-                        node.getChildren().forEach(child => child.dispose());
-                    }
-                    node.dispose();
-                });
-                
-                this.graphMeshes.edges.forEach(edge => edge.dispose());
-            }, 10);
-        } else {
-            // En mode desktop, dispose immédiatement
-            this.graphMeshes.nodes.forEach(node => {
-                if (node.getChildren) {
-                    node.getChildren().forEach(child => child.dispose());
-                }
-                node.dispose();
-            });
-            
-            this.graphMeshes.edges.forEach(edge => edge.dispose());
-        }
+        // Supprimer toutes les arêtes
+        this.graphMeshes.edges.forEach(edge => edge.dispose());
         
         this.graphMeshes = { nodes: [], edges: [] };
         this.selectedNodes = [];
-        
-        console.log('clearGraph completed, VR maintained:', this.isInVR());
     }
 
     /**
@@ -1120,49 +651,32 @@ class GraphManager {
         }
 
         // Animer les nœuds vers leurs nouvelles positions
-        const animationDuration = 60; // frames
-        let currentFrame = 0;
-        const startPositions = this.graphMeshes.nodes.map(node => node.position.clone());
-        
-        // Animation manuelle compatible VR
-        const animationObserver = this.scene.onBeforeRenderObservable.add(() => {
-            currentFrame++;
-            const progress = Math.min(currentFrame / animationDuration, 1);
-            
-            // Easing quadratique (smooth in-out)
-            const easedProgress = progress < 0.5 
-                ? 2 * progress * progress 
-                : 1 - Math.pow(-2 * progress + 2, 2) / 2;
-            
-            this.graphMeshes.nodes.forEach((nodeMesh, index) => {
-                if (positions[index] && startPositions[index]) {
-                    const targetPos = new BABYLON.Vector3(
-                        positions[index].x,
-                        positions[index].y,
-                        positions[index].z
-                    );
-                    
-                    // Interpolation linéaire avec easing
-                    nodeMesh.position = BABYLON.Vector3.Lerp(
-                        startPositions[index],
-                        targetPos,
-                        easedProgress
-                    );
-                }
-            });
-            
-            // Mettre à jour les arêtes pendant l'animation
-            if (currentFrame % 5 === 0) {
-                this.updateEdges();
-            }
-            
-            // Terminer l'animation
-            if (progress >= 1) {
-                this.scene.onBeforeRenderObservable.remove(animationObserver);
-                this.updateEdges();
-                console.log('Animation layout terminee');
+        this.graphMeshes.nodes.forEach((nodeMesh, index) => {
+            if (positions[index]) {
+                const targetPos = new BABYLON.Vector3(
+                    positions[index].x,
+                    positions[index].y,
+                    positions[index].z
+                );
+
+                // Animation fluide vers la nouvelle position
+                BABYLON.Animation.CreateAndStartAnimation(
+                    `moveNode_${index}`,
+                    nodeMesh,
+                    "position",
+                    60,
+                    60,
+                    nodeMesh.position.clone(),
+                    targetPos,
+                    BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT
+                );
             }
         });
+
+        // Mettre à jour les positions des arêtes après animation
+        setTimeout(() => {
+            this.updateEdges();
+        }, 1100);
     }
 
     /**
@@ -1175,7 +689,7 @@ class GraphManager {
 
         if (!this.currentGraph || !this.currentGraph.edges) return;
 
-        this.currentGraph.edges.forEach((edgeData, index) => {
+        this.currentGraph.edges.forEach(edgeData => {
             const sourceNode = this.graphMeshes.nodes.find(
                 n => n.metadata.nodeData.id === edgeData.source
             );
@@ -1187,68 +701,11 @@ class GraphManager {
                 const edge = this.createEdge(
                     sourceNode.position,
                     targetNode.position,
-                    edgeData,
-                    index
+                    edgeData
                 );
                 this.graphMeshes.edges.push(edge);
             }
         });
-    }
-    
-    /**
-     * Diagnostic VR - Affiche les infos sur les nœuds visibles
-     * Appeler depuis la console : window.graphManager.diagnoseVR()
-     */
-    diagnoseVR() {
-        console.log('=== DIAGNOSTIC VR ===');
-        console.log(`Mode VR: ${this.isInVR()}`);
-        console.log(`Nœuds dans graphMeshes: ${this.graphMeshes.nodes.length}`);
-        console.log(`Arêtes dans graphMeshes: ${this.graphMeshes.edges.length}`);
-        
-        if (this.currentGraph) {
-            console.log(`Nœuds dans currentGraph: ${this.currentGraph.nodes.length}`);
-        }
-        
-        if (this.scene.activeCamera) {
-            const cam = this.scene.activeCamera;
-            console.log(`Caméra: ${cam.getClassName()}`);
-            console.log(`Position caméra: (${cam.position.x.toFixed(2)}, ${cam.position.y.toFixed(2)}, ${cam.position.z.toFixed(2)})`);
-        }
-        
-        console.log('\n=== PREMIERS NOEUDS ===');
-        this.graphMeshes.nodes.slice(0, 5).forEach((node, i) => {
-            console.log(`Node ${i} [${node.name}]:`);
-            console.log(`  Position: (${node.position.x.toFixed(2)}, ${node.position.y.toFixed(2)}, ${node.position.z.toFixed(2)})`);
-            console.log(`  Visible: ${node.isVisible}, Enabled: ${node.isEnabled()}`);
-            console.log(`  Material: ${node.material ? 'OK' : 'MANQUANT'}`);
-            console.log(`  Parent: ${node.parent ? node.parent.name : 'NONE'}`);
-            
-            if (this.scene.activeCamera) {
-                const distance = BABYLON.Vector3.Distance(this.scene.activeCamera.position, node.position);
-                console.log(`  Distance caméra: ${distance.toFixed(2)}`);
-            }
-        });
-        
-        console.log('\n=== TOUS LES NOEUDS (positions) ===');
-        this.graphMeshes.nodes.forEach((node, i) => {
-            const pos = node.position;
-            const isAtOrigin = Math.abs(pos.x) < 0.01 && Math.abs(pos.y) < 0.01 && Math.abs(pos.z) < 0.01;
-            if (isAtOrigin) {
-                console.warn(`⚠️ Node ${i} [${node.name}] à l'origine (0,0,0)!`);
-            }
-        });
-        
-        const nodesAtOrigin = this.graphMeshes.nodes.filter(n => 
-            Math.abs(n.position.x) < 0.01 && Math.abs(n.position.y) < 0.01 && Math.abs(n.position.z) < 0.01
-        ).length;
-        
-        console.log(`\n⚠️ TOTAL: ${nodesAtOrigin}/${this.graphMeshes.nodes.length} nœuds à l'origine (0,0,0)`);
-        
-        return {
-            totalNodes: this.graphMeshes.nodes.length,
-            nodesAtOrigin: nodesAtOrigin,
-            isVR: this.isInVR()
-        };
     }
 }
 
