@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Diagnostic WebXR - Quest 3</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #ffffff;
+        }
+        .test-section {
+            background: #2d2d2d;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            border-left: 4px solid #007acc;
+        }
+        .success { color: #4ec9b0; }
+        .error { color: #f48771; }
+        .warning { color: #dcdcaa; }
+        button {
+            background: #007acc;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #005a9e;
+        }
+        #results {
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 Diagnostic WebXR pour Meta Quest 3</h1>
+    
+    <div class="test-section">
+        <h2>Étape 1 : Tests Automatiques</h2>
+        <button onclick="runDiagnostics()">▶️ Lancer le Diagnostic Complet</button>
+        <div id="results"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Étape 2 : Test Session VR</h2>
+        <button onclick="testVRSession()">🥽 Tester une Session VR</button>
+        <div id="vrResults"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Étape 3 : Informations Système</h2>
+        <button onclick="showSystemInfo()">ℹ️ Afficher Infos Système</button>
+        <div id="systemInfo"></div>
+    </div>
+
+    <script>
+        async function runDiagnostics() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '🔄 Diagnostic en cours...\n\n';
+            let output = '';
+
+            // Test 1 : Vérifier navigator.xr
+            output += '═══════════════════════════════════════════\n';
+            output += '📋 TEST 1 : API WebXR\n';
+            output += '═══════════════════════════════════════════\n';
+            if (navigator.xr) {
+                output += '✅ navigator.xr existe\n';
+            } else {
+                output += '❌ navigator.xr n\'existe PAS\n';
+                output += '   → WebXR n\'est pas disponible dans ce navigateur\n';
+                output += '   → Utilisez Chrome ou Edge version 90+\n';
+                resultsDiv.innerHTML = output;
+                return;
+            }
+
+            // Test 2 : Support immersive-vr
+            output += '\n═══════════════════════════════════════════\n';
+            output += '📋 TEST 2 : Support immersive-vr\n';
+            output += '═══════════════════════════════════════════\n';
+            try {
+                const vrSupported = await navigator.xr.isSessionSupported('immersive-vr');
+                if (vrSupported) {
+                    output += '✅ immersive-vr est SUPPORTÉ\n';
+                    output += '   → Votre casque est correctement détecté!\n';
+                } else {
+                    output += '❌ immersive-vr n\'est PAS supporté\n';
+                    output += '   → Le casque n\'est pas détecté par le navigateur\n';
+                    output += '\n🔧 SOLUTIONS À ESSAYER :\n';
+                    output += '   1. Redémarrez l\'application Oculus/Meta Quest\n';
+                    output += '   2. Débranchez et rebranchez le casque\n';
+                    output += '   3. Dans l\'app Meta Quest PC, allez dans Paramètres > Général\n';
+                    output += '      et activez "Runtime OpenXR inconnu"\n';
+                    output += '   4. Définissez Oculus comme runtime OpenXR actif\n';
+                    output += '   5. Redémarrez Chrome complètement\n';
+                }
+            } catch (e) {
+                output += '❌ ERREUR lors du test : ' + e.message + '\n';
+            }
+
+            // Test 3 : Support immersive-ar
+            output += '\n═══════════════════════════════════════════\n';
+            output += '📋 TEST 3 : Support immersive-ar\n';
+            output += '═══════════════════════════════════════════\n';
+            try {
+                const arSupported = await navigator.xr.isSessionSupported('immersive-ar');
+                output += (arSupported ? '✅' : '❌') + ' immersive-ar : ' + arSupported + '\n';
+            } catch (e) {
+                output += '❌ ERREUR : ' + e.message + '\n';
+            }
+
+            // Test 4 : Support inline
+            output += '\n═══════════════════════════════════════════\n';
+            output += '📋 TEST 4 : Support inline (mode fenêtre)\n';
+            output += '═══════════════════════════════════════════\n';
+            try {
+                const inlineSupported = await navigator.xr.isSessionSupported('inline');
+                output += (inlineSupported ? '✅' : '❌') + ' inline : ' + inlineSupported + '\n';
+            } catch (e) {
+                output += '❌ ERREUR : ' + e.message + '\n';
+            }
+
+            resultsDiv.innerHTML = output;
+        }
+
+        async function testVRSession() {
+            const resultsDiv = document.getElementById('vrResults');
+            resultsDiv.innerHTML = '🔄 Test de session VR en cours...\n\n';
+            let output = '';
+
+            try {
+                output += '🚀 Tentative de création d\'une session VR...\n';
+                const session = await navigator.xr.requestSession('immersive-vr', {
+                    optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking', 'layers']
+                });
+                
+                output += '✅ SESSION VR CRÉÉE AVEC SUCCÈS!\n\n';
+                output += '📊 Informations de la session :\n';
+                output += '   - Mode : ' + session.mode + '\n';
+                output += '   - RenderState : ' + JSON.stringify(session.renderState, null, 2) + '\n';
+                
+                // Fermer la session
+                await session.end();
+                output += '\n✅ Session fermée proprement\n';
+                output += '\n🎉 VOTRE CASQUE FONCTIONNE PARFAITEMENT!\n';
+                output += '   Le problème vient de la configuration Babylon.js\n';
+                
+            } catch (error) {
+                output += '❌ ÉCHEC de création de session VR\n\n';
+                output += '📋 Détails de l\'erreur :\n';
+                output += '   - Type : ' + error.name + '\n';
+                output += '   - Message : ' + error.message + '\n\n';
+                
+                if (error.name === 'NotSupportedError') {
+                    output += '🔧 DIAGNOSTIC : NotSupportedError\n';
+                    output += '   → Le navigateur ne détecte pas le casque\n\n';
+                    output += '   ÉTAPES À SUIVRE :\n';
+                    output += '   1. Ouvrez l\'application Oculus/Meta Quest sur PC\n';
+                    output += '   2. Allez dans Paramètres > Général > OpenXR Runtime\n';
+                    output += '   3. Cliquez sur "Définir Oculus comme runtime OpenXR actif"\n';
+                    output += '   4. Redémarrez Chrome COMPLÈTEMENT (fermez toutes les fenêtres)\n';
+                    output += '   5. Vérifiez que le casque est bien en mode Link (pas en mode autonome)\n';
+                } else if (error.name === 'SecurityError') {
+                    output += '🔧 DIAGNOSTIC : SecurityError\n';
+                    output += '   → Problème de sécurité/permissions\n';
+                    output += '   → Utilisez HTTPS ou localhost\n';
+                } else if (error.name === 'InvalidStateError') {
+                    output += '🔧 DIAGNOSTIC : InvalidStateError\n';
+                    output += '   → Le casque n\'est pas prêt\n';
+                    output += '   → Mettez le casque et attendez l\'environnement Link\n';
+                }
+            }
+
+            resultsDiv.innerHTML = output;
+        }
+
+        function showSystemInfo() {
+            const infoDiv = document.getElementById('systemInfo');
+            let output = '═══════════════════════════════════════════\n';
+            output += '💻 INFORMATIONS SYSTÈME\n';
+            output += '═══════════════════════════════════════════\n\n';
+            
+            output += '🌐 Navigateur :\n';
+            output += '   ' + navigator.userAgent + '\n\n';
+            
+            output += '🔒 Protocole :\n';
+            output += '   ' + window.location.protocol + '\n';
+            output += '   ' + (window.location.protocol === 'https:' || window.location.hostname === 'localhost' ? '✅ Sécurisé' : '⚠️ Non sécurisé - WebXR nécessite HTTPS') + '\n\n';
+            
+            output += '📍 Hostname :\n';
+            output += '   ' + window.location.hostname + '\n\n';
+            
+            output += '🔧 APIs Disponibles :\n';
+            output += '   - WebXR : ' + (navigator.xr ? '✅' : '❌') + '\n';
+            output += '   - WebGL : ' + (window.WebGLRenderingContext ? '✅' : '❌') + '\n';
+            output += '   - WebGL2 : ' + (window.WebGL2RenderingContext ? '✅' : '❌') + '\n';
+            
+            infoDiv.innerHTML = output;
+        }
+
+        // Lancer automatiquement au chargement
+        window.addEventListener('load', () => {
+            setTimeout(runDiagnostics, 500);
+        });
+    </script>
+</body>
+</html>
