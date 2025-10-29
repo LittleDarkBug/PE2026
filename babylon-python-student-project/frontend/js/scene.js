@@ -45,15 +45,19 @@ async function setupWebXR(scene) {
         if (xrHelper.baseExperience) {
             console.log("WebXR activé ! Support VR disponible");
             
+            const featuresManager = xrHelper.baseExperience.featuresManager;
+            
             // Configuration des contrôleurs VR
             xrHelper.input.onControllerAddedObservable.add((controller) => {
                 controller.onMotionControllerInitObservable.add((motionController) => {
                     console.log("Contrôleur VR détecté:", motionController.handedness);
                     
-                    // Ajouter interaction par pointage laser
-                    const xr_ids = motionController.getComponentIds();
-                    let triggerComponent = motionController.getComponent(xr_ids[0]);
+                    // Récupérer les composants du contrôleur
+                    const componentIds = motionController.getComponentIds();
+                    console.log("Composants disponibles:", componentIds);
                     
+                    // Gestion du trigger
+                    const triggerComponent = motionController.getComponent(componentIds[0]);
                     if (triggerComponent) {
                         triggerComponent.onButtonStateChangedObservable.add(() => {
                             if (triggerComponent.pressed) {
@@ -64,21 +68,46 @@ async function setupWebXR(scene) {
                 });
             });
 
-            // Téléportation dans l'environnement VR
-            const featuresManager = xrHelper.baseExperience.featuresManager;
-            featuresManager.enableFeature(BABYLON.WebXRFeatureName.TELEPORTATION, "stable", {
-                xrInput: xrHelper.input,
-                floorMeshes: [scene.getMeshByName("ground")],
-                snapPositions: [new BABYLON.Vector3(2, 0, 2)]
-            });
+            // TELEPORTATION - Avec configuration simplifiée
+            const teleportation = featuresManager.enableFeature(
+                BABYLON.WebXRFeatureName.TELEPORTATION, 
+                "stable", 
+                {
+                    xrInput: xrHelper.input,
+                    floorMeshes: [scene.getMeshByName("ground")]
+                }
+            );
+            console.log("Téléportation VR activée");
 
-            // Interaction avec les objets (pointer selection)
-            featuresManager.enableFeature(BABYLON.WebXRFeatureName.POINTER_SELECTION, "stable", {
-                xrInput: xrHelper.input,
-                enablePointerSelectionOnAllControllers: true
-            });
+            // MOVEMENT - Déplacement continu avec les joysticks
+            const movement = featuresManager.enableFeature(
+                BABYLON.WebXRFeatureName.MOVEMENT, 
+                "latest", 
+                {
+                    xrInput: xrHelper.input,
+                    movementEnabled: true,
+                    movementSpeed: 1.0,
+                    movementThreshold: 0.25,
+                    rotationEnabled: true,
+                    rotationSpeed: 1.0,
+                    rotationThreshold: 0.25
+                }
+            );
+            console.log("Déplacement VR avec joysticks activé");
+
+            // POINTER SELECTION - Interaction avec les objets
+            const pointerSelection = featuresManager.enableFeature(
+                BABYLON.WebXRFeatureName.POINTER_SELECTION, 
+                "stable", 
+                {
+                    xrInput: xrHelper.input,
+                    enablePointerSelectionOnAllControllers: true
+                }
+            );
+            console.log("Sélection par pointeur VR activée");
 
             console.log("Pour entrer en VR, cliquez sur le bouton VR en bas à droite");
+            console.log("Utilisez les joysticks pour vous déplacer et tourner");
         }
     } catch (error) {
         console.log("WebXR non disponible:", error.message);
